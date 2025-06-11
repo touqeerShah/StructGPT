@@ -1,0 +1,6 @@
+/path/
+/venv
+/__pycache__
+.git
+celerybeat-schedule.db
+app/data

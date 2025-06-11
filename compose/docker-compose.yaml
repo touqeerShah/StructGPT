@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+
+
+  chroma-server:
+    image: ghcr.io/chroma-core/chroma:0.5.18  # Replace with {{ .Values.chroma.image }} if templating
+    container_name: chroma-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./index_data:/data
+    restart: unless-stopped
+
+
+volumes:
+  redis-data:

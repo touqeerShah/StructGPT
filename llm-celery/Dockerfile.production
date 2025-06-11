@@ -1,0 +1,51 @@
+# Use a super lightweight Python base image
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV C_FORCE_ROOT="true"
+
+# Set working directory
+WORKDIR /llm
+
+# Copy application code
+COPY . .
+
+# Debug: List contents
+RUN ls -l /llm
+
+# Update system packages and install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libc-dev \
+    libffi-dev \
+    libpq-dev \
+    python3-dev \
+    python3-pip \
+    openssl \
+    build-essential \
+    bash \
+    linux-headers-amd64 \
+    rustc \
+    cargo \
+    vim \
+    && rm -rf /var/lib/apt/lists/*  # Clean up package lists to reduce image size
+
+# Upgrade pip and install dependencies
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN apt update && apt install procps -y
+
+# Create and activate virtual environment
+RUN python3 -m venv /llm/venv && \
+    . /llm/venv/bin/activate && \
+    pip install --no-cache-dir --verbose -r /llm/requirements.txt
+
+# Ensure Celery is found in PATH
+ENV PATH="/llm/venv/bin:$PATH"
+
+# Expose port
+EXPOSE 4000
+
+# Start Celery worker
+CMD ["/llm/venv/bin/celery", "-A", "app.config.celery_app.celery_app", "worker", "-B", "--loglevel=info", "--concurrency=4", "-P", "prefork"]

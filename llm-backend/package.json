@@ -1,0 +1,16 @@
+{
+  "name": "ao-llm",
+  "version": "1.0.0",
+  "description": "``` python3 -m venv ./path/to/ source ./path/to/bin/activate ``` #### Dependencies ``` pip3 install PyJWT pip3 install python-dotenv pip3 install uvicorn fastapi pip3 install sentence-transformers pip3 install numpy PyPDF2 tqdm pip3 install langchain pip3 install chromadb pip3 install pypdf pip3 install 'cryptography>=3.1' pip3 install -qU langchain pypdf llama-cpp-python  pip3 install -qU sentence_transformers pip3 install -q chromadb pip3 install rank_bm25 pip3 install -q ragas pip3 install gpt4all pip3 install celery fastapi flower pip3 install python-multipart python3 -m pip install python-pptx pip3 install llama-index pip3 install llama-index-vector-stores-qdrant pip3 install llama-index-vector-stores-chroma pip3 install llama-index pip3 install llama-index chromadb --quiet pip3 install chromadb==0.4.22 pip3 install pydantic==1.10.11 pip3 install open-clip-torch pip3 install ipython pip3 install gpt4all pip3 install pymongo pip3 install fitz pip3 install --upgrade --quiet  boto3 pip3 install motor pip3 install aiofiles pip3 install aioredis python-jose python-dotenv pip3 install redis pip install langchain-mongodb pip install -U langgraph pip install langchain-experimental pip install -U langchain-anthropic pip install -U instructor",
+  "main": "test.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "eventsource": "^3.0.7",
+    "ws": "^8.18.1"
+  }
+}

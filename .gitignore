@@ -192,3 +192,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+data
+compose/index_data
+llm-backend/README-dev.md
+llm-celery/README-dev.md
+llm-backend/app/src/agent

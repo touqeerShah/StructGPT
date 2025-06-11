@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chunked Upload UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #log { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; margin-top: 10px; background: #f9f9f9; }
+    button { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Upload PDF and Monitor Stream</h2>
+  <input type="file" id="fileInput" accept="application/pdf" />
+  <button onclick="startUpload()">Start Upload</button>
+  <button onclick="killTask()">Stop Upload</button>
+  <div id="log"></div>
+
+  <script>
+    const API_URL = "http://localhost:4000/api";
+    const STREAM_URL = "http://localhost:4000/llm/stream";
+    const TOKEN = "Bearer ...YOUR_TOKEN_HERE...";
+    const CHUNK_SIZE = 1024 * 1024;
+    const MAX_CONCURRENT_UPLOADS = 5;
+    let taskIds = [];
+    let fileId = "demo-ui-upload";
+
+    function log(msg) {
+      const logDiv = document.getElementById("log");
+      logDiv.textContent += `\n${msg}`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function killTask() {
+      if (!taskIds.length) return log("⚠️ No task ID to kill.");
+      fetch(`${API_URL}/llm/kill_task`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": TOKEN
+        },
+        body: JSON.stringify({ task_id: taskIds, chat_id: fileId })
+      })
+      .then(res => res.json())
+      .then(data => log("🛑 Kill task: " + JSON.stringify(data)))
+      .catch(err => log("❌ Kill error: " + err.message));
+    }
+
+    function streamOutput() {
+      const evt = new EventSource(`${STREAM_URL}/${fileId}/?last_id=0`);
+      evt.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          log("📨 " + data.message);
+          if (data.isFinished === "True" || data.isFinished === true) {
+            evt.close();
+            log("✅ Stream closed.");
+          }
+        } catch (e) {
+          log("❌ Error parsing stream: " + e.message);
+        }
+};
+      evt.onerror = (err) => {
+        log("❌ Stream error: " + err.message);
+        evt.close();
+      };
+    }
+
+    async function startUpload() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      if (!file) return log("⚠️ No file selected.");
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      log(`🚀 Uploading '${file.name}' in ${totalChunks} chunks...`);
+
+      const uploadChunk = async (chunkIndex) => {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        const formData = new FormData();
+        formData.append("file", chunk, file.name);
+        formData.append("file_id", fileId);
+        formData.append("chunk_index", String(chunkIndex));
+        formData.append("total_chunks", String(totalChunks));
+        formData.append("chat_id", fileId);
+
+        const res = await fetch(`${API_URL}/upload`, {
+          method: "POST",
+          headers: { Authorization: TOKEN },
+          body: formData
+        });
+
+        const result = await res.json();
+        log(`✅ Chunk ${chunkIndex + 1}/${totalChunks}: ${result.message}`);
+      };
+
+      for (let i = 0; i < totalChunks; i += MAX_CONCURRENT_UPLOADS) {
+        const batch = [];
+        for (let j = i; j < i + MAX_CONCURRENT_UPLOADS && j < totalChunks; j++) {
+          batch.push(uploadChunk(j));
+        }
+        await Promise.all(batch);
+      }
+
+      log("📤 All chunks uploaded. Starting stream...");
+      streamOutput();
+    }
+  </script>
+</body>
+</html>
