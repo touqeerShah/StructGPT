@@ -1,0 +1,13 @@
+path/
+path-2/
+api/.env
+app/data
+helm/charts/common-2.19.2.tgz
+helm/charts/redis-19.3.0.tgz
+helm/Chart.lock
+*.pyc
+api_responses.json
+.codegpt
+node_modules
+FormyconAG_H1-2024_EN_final_v1
+KW24Abstracts.pdf
