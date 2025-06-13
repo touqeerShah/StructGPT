@@ -76,7 +76,7 @@ def sanitize_collection_name(name: str) -> str:
     return sanitized_name[:63].ljust(3, "_")
 
 
-UPLOAD_DIRECTORY = Path("../../../..//data")
+UPLOAD_DIRECTORY = Path("../data/raw")
 UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
 CHUNK_SIZE = 1024 * 1024 * 5  # 5MB per chunk
 MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100MB max file size
@@ -107,7 +107,8 @@ async def upload_chunk(
 
     delete_stop_flag(chat_id)
     delete_stream(chat_id)
-    chunks_dir = UPLOAD_DIRECTORY / f"{file_id}_chunks"
+    
+    chunks_dir = UPLOAD_DIRECTORY / chat_id / f"{file_id}_chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
     chunk_file_path = chunks_dir / f"chunk_{chunk_index:05d}.part"
 
@@ -135,7 +136,10 @@ async def upload_chunk(
         )
 
         if all_chunks_present:
-            final_file_path = UPLOAD_DIRECTORY / file.filename
+            chat_folder = UPLOAD_DIRECTORY / chat_id
+            chat_folder.mkdir(parents=True, exist_ok=True)
+
+            final_file_path = chat_folder / file.filename
 
             # 🔍 Assemble file
             try:

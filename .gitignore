@@ -198,3 +198,4 @@ compose/index_data
 llm-backend/README-dev.md
 llm-celery/README-dev.md
 llm-backend/app/src/agent
+llm-backend/path/to
