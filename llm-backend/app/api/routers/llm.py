@@ -7,10 +7,10 @@ from fastapi import (
 
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
-from datetime import datetime
+from app.src.agent.fromater import Fromater
 from fastapi.responses import StreamingResponse
 
-from app.src.agent.helper import AgentState, TopicPoint, Outline
+from app.src.agent.helper import AgentState, Struture
 from app.api.utils.celery_helper import revoke_celery_task
 import json
 import hashlib
@@ -20,7 +20,6 @@ import redis.asyncio as redis
 import os
 from typing import List, Dict, Any
 
-from app.src.agent.report import Report
 from app.api.utils.cache import set_stop_flag, delete_stream
 
 llm_router = APIRouter()
@@ -81,32 +80,26 @@ def validate_request(
     return errors
 
 
-@llm_router.post("/report_generation")
+@llm_router.post("/data_generation")
 async def report_generater(
     request: Request,
-    # topic: str = FastAPIQuery(..., description="The current topic"),
-    # query: List[Query] = Body(..., description="The list of queries"),
-    # chat_id: str = FastAPIQuery(None, description="The chat ID"),
-    # is_memory: bool = FastAPIQuery(False, description="This enables memory"),
-    # collections: List[str] = FastAPIQuery([], description="The collections to use"),
 ):
     try:
         data = await request.json()
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON received.")
-    required_fields = ["topic", "query", "chat_id", "is_memory", "collections"]
+    required_fields = ["keywords", "query", "chat_id", "is_memory", "collections"]
     field_types = {
-        "topic": str,
+        "keywords": str,
         "query": list,
         "chat_id": str,
-        "is_memory": bool,
-        "collections": list,
+        "collection_name": str,
     }
 
     errors = validate_request(data, required_fields, field_types)
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
-    topic = data.get("topic", "")
+    keywords = data.get("keywords", "")
     query = data.get("query", [])
     chat_id = data.get("chat_id", "")
     # chat_id = generate_unique_hash(chat_id + user_id):
@@ -114,25 +107,24 @@ async def report_generater(
     collections = data.get("collections", [])
 
     agent_state = AgentState(
-        topic=topic,
+        keywords=keywords,
         query=query,
-        outline=Outline(outline=[TopicPoint(topic="", points=[])]),
-        response=[],
-        no_iterate=1,
-        next_action="",
-        current_topic="",
-        chat_history=[],
-        user_id="user_id",
+        struture=Struture(class_name="", class_struture=""),
+        answer=[],
+        no_iterate=0,
+        feeder="",
+        limit=10,
+        start_page=0,
+        end_page=0,
         collection_names=collections,
-        is_Report_generated=False,
+        total_pages=-1,
         error=False,
         error_message="",
         chat_id=chat_id,
-        scape_formate=False,
     )
     results = set_stop_flag(f"{chat_id}", False)
-    report = Report(collections, "llama-pro:8b-instruct-q5_K_M")
-    generator = report.report_generater(agent_state, chat_id)
+    fromater = Fromater(collections, "llama-pro:8b-instruct-q5_K_M")
+    generator = fromater.generater(agent_state, chat_id)
 
     return StreamingResponse(
         generator,
