@@ -35,8 +35,8 @@ class Fromater:
         # builder.add_node("check_user_abort", lambda state: None)  # No-op node
 
         def formate_verification_continue(state):
-
-            if state["error"] or len(state["feeder"]) > 0:
+            print(" = = = = > ",len(state["feeder"]))
+            if state["error"] or len(state["feeder"]) == 0:
                 return "__end"
             else:
                 return "extract_structured_data_from_feeder_node"
@@ -80,7 +80,6 @@ class Fromater:
         )
 
 
-        # qa_advanced, llm = get_llm_object(collection_names, model)
 
         self.graph = builder.compile()
         self.collection_names = collection_names
@@ -135,13 +134,13 @@ class Fromater:
 
         finally:
             print("done !")
-            if get_stop_flag(f"{chat_id}_{state['user_id']}"):
+            if get_stop_flag(f"{chat_id}"):
                 print(f"User {chat_id} aborted process.")
                 self.message["status"] = "done"
-                delete_stop_flag(f"{chat_id}_{state['user_id']}")
+                delete_stop_flag(f"{chat_id}")
                 yield f'data: {{"message": {json.dumps(self.message)}}}\n'
             else:
-                delete_stop_flag(f"{chat_id}_{state['user_id']}")
+                delete_stop_flag(f"{chat_id}")
 
                 # source = unique_sources_list
                 timestamp = datetime.fromtimestamp(time.time()).strftime(

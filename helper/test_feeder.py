@@ -77,7 +77,7 @@ count_tokens = lambda x: len(tokenizer.encode(x))
 
 feeder = generate_feeder_from_page_range(
     chroma_host="localhost",
-    collection_name="Declaration_of_Proof_Form_160226",
+    collection_name="KW24Abstracts-1-20-1",
     start_page=0,
     end_page=10,
     token_limit=3000,

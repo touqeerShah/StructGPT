@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 # boto3.set_stream_logger(name='botocore')
 import tiktoken
 
-from app.src.agent.helper import AgentState, Struture, Response
+from app.src.agent.helper import AgentState, Struture
 
 import json
 from langchain_core.messages import HumanMessage, AIMessage
@@ -61,7 +61,7 @@ def generate_feeder_from_page_range(
     results = collection.get(include=["documents"], offset=start_page, limit=page_count)
     # print("results : ",results)
     raw_pages = results.get("documents", [])
-    print("pages : ", raw_pages)
+    # print("pages : ", raw_pages)
     seen = set()
     pages = []
     for page in raw_pages:
@@ -128,9 +128,9 @@ def extract_valid_json(raw_response: str) -> Optional[Dict[str, Any]]:
 
 def generate_struture(state: AgentState) -> AgentState:
     print("generate_struture")
-    qa_advanced, llm = get_llm_object(state["collection_names"])
+    llm = get_llm_object(state["collection_name"])
 
-    if not qa_advanced or not llm:
+    if  not llm:
         # state["outline"] = Outline(outline=[])
         state["no_iterate"] = 0
         return state
@@ -138,30 +138,40 @@ def generate_struture(state: AgentState) -> AgentState:
     schema = json.dumps(Struture.model_json_schema())
 
     message = f"""
-        You are a report assistant tasked with generating a structured class definition from user context.
+    You are a report assistant tasked with generating a structured class definition from user context.
 
-        Instructions:
-        1. Carefully read the context provided.
-        2. Based on that, suggest a class name and its complete Python class definition.
-        3. The Python class should follow the Pydantic format.
-        4. Include nested models if needed (but fully define them inside the class string).
-        5. Output strictly the JSON object with the following fields:
-            - "class_name": A valid PascalCase class name.
-            - "class_struture": A complete Python class string (including imports and nested models if required).
+    Instructions:
+    1. Carefully read the context provided.
+    2. Based on that, suggest a class name and its complete Python class definition.
+    3. The Python class must follow **Pydantic v2 standards**.
+    4. Include nested models if needed (and define them fully within the same string).
+    5. Return only a strict JSON object with two fields:
+        - "class_name": A valid PascalCase name for the top-level model.
+        - "class_struture": A complete Python class string that can be executed directly with `exec()`.
 
+    ### Pydantic v2 Rules (Important):
+    - Use `pattern=...` instead of `regex=...` in `Field()`.
+    - You can use constraints like `min_length`, `max_length`, `gt`, `lt`, `ge`, `le` inside `Field()`.
+    - All classes should inherit from `BaseModel`.
+    - Use type hints like `str`, `int`, `float`, `bool`, `List[str]`, `Optional[int]` correctly.
+    - Use `from typing import List, Optional` if needed.
+    - Import `Field` and `BaseModel` at the top: `from pydantic import BaseModel, Field`.
 
-        Context:
-        {state["query"]}
+    ### Context:
+    {state["query"]}
 
-        Output Format:
-        {{
-        "class_name": "YourClassName",
-        "class_struture": "class YourClassName(BaseModel):\\n    field1: str\\n    field2: int\\n..."
-        }}
+    ### Output Format:
+    {{
+    "class_name": "YourClassName",
+    "class_struture": "from pydantic import BaseModel, Field\\nfrom typing import List, Optional\\n\\nclass YourClassName(BaseModel):\\n    field1: str\\n    field2: Optional[int] = None"
+    }}
 
-
-
-        
+    ### Output Requirements:
+    - Return only the JSON object.
+    - Do not explain the class.
+    - Do not include any comments or markdown.
+    - Do not include the schema or any extra text.
+    {schema}
     """
 
     # print("message",message)
@@ -169,9 +179,9 @@ def generate_struture(state: AgentState) -> AgentState:
         try:
             response = llm.invoke([HumanMessage(content=message)])
             # print("response",response)
-            raw_result = response.content
+            raw_result = response.content if hasattr(response, "content") else response
             print(f"\nAttempt {attempt + 1} ")
-
+            print("raw_result : ",raw_result)
             parsed = extract_valid_json(raw_result)
             if parsed:
                 validated = Struture.model_validate(parsed)
@@ -196,6 +206,12 @@ def feed_data(state: AgentState):
 
     tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
     count_tokens = lambda x: len(tokenizer.encode(x))
+    collection_name = state.get("collection_name")
+
+    if not collection_name or not isinstance(collection_name, str):
+        state["error"] = True
+        state["error_message"] = "Invalid or missing collection_name in state."
+        return state
 
     db = chromadb.HttpClient(host="localhost", port=8000)
     collection = db.get_or_create_collection(state["collection_name"])
@@ -247,7 +263,7 @@ def feed_data(state: AgentState):
         count_tokens=count_tokens,
     )
 
-    print(feeder)
+    # print(feeder)
     print(f"Feeder has {len(feeder)} items for pages {start_page}–{end_page - 1}")
     state["feeder"] = feeder
     # Update iteration count
@@ -266,8 +282,8 @@ def extract_structured_data_from_feeder(state: AgentState) -> AgentState:
         return state
 
     # Setup: load LLM and dynamic class
-    qa_advanced, llm = get_llm_object(state["collection_names"])
-    if not qa_advanced or not llm:
+    llm = get_llm_object(state["collection_name"])
+    if  not llm:
         state["error"] = True
         state["error_message"] = "LLM loading failed."
         return state
@@ -292,33 +308,45 @@ def extract_structured_data_from_feeder(state: AgentState) -> AgentState:
         print(f"Processing feeder item {idx + 1}/{len(state['feeder'])}")
 
         message = f"""
-        You are a structured data extractor. Based on the following Pydantic model definition, extract a JSON object from the input text.
+            You are a structured data extractor. Based on the following Pydantic model definition, extract a JSON object from the input text.
 
+            Extra Details :
+            {state["query"]}
 
-        ### Input Text:
-        {context}
+            Input Text:
+            {context}
 
-        Output Requirements:
-        Return only the JSON object instance (strictly adhering to the schema).
-        Do not include any schema, explanations, or additional information in the output.
-        {schema}
-         """
+            Output Requirements:
+            - Return only a **JSON array** of objects matching the schema.
+            - No markdown, explanations, or comments.
+            - Just valid JSON output like: [{{...}}, {{...}}]
+            - The array can be empty if nothing matches.
+                    
+            {schema}
+
+            """
 
         try:
             response = llm.invoke([HumanMessage(content=message)])
-            raw_output = response.content
+            raw_output = response.content if hasattr(response, "content") else response
             parsed = extract_valid_json(raw_output)
-
-            if not parsed:
-                print(f"Feeder item {idx + 1} - failed to extract valid JSON.")
+            print("parsed : ",parsed)
+            if not parsed or not isinstance(parsed, list):
+                print(f"Feeder item {idx + 1} - JSON not a list or not valid.")
                 continue
 
-            validated = DynamicClass.model_validate(parsed)
-            state["answer"].append(validated.model_dump())
+            for item in parsed:
+                try:
+                    validated = DynamicClass.model_validate(item)
+                    state["answer"].append(validated.model_dump())
+                except Exception as ve:
+                    print(f"Validation failed for one item in feeder {idx + 1}: {ve}")
+                    continue
 
         except Exception as e:
             print(f"Feeder item {idx + 1} - exception: {e}")
             continue
+
 
     return state
 

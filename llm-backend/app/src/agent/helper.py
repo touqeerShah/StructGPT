@@ -17,7 +17,8 @@ class Struture(BaseModel):
 
 class AgentState(TypedDict):
     struture: List[Struture]
-    keywords: str
+    fields: str
+    keywords: List[str]
     query: str
     answer: List[object]
     feeder: List[str]

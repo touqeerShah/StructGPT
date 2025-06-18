@@ -199,3 +199,8 @@ llm-backend/README-dev.md
 llm-celery/README-dev.md
 # llm-backend/app/src/agent
 llm-backend/path/to
+
+llm-backend/node_modules
+llm-backend/path
+compose/esdata
+llm-celery/celerybeat-schedule.db

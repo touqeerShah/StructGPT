@@ -14,9 +14,11 @@ from app.tasks.load_data.cache import get_stop_flag, publish_stream_event, set_s
 
 
 from celery.utils.log import get_task_logger
-from llama_index.core import StorageContext, VectorStoreIndex
+from elasticsearch import Elasticsearch, helpers
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.schema import Document
+from uuid import uuid4
+
+from langchain_core.documents import Document
 from llama_index.embeddings.langchain import LangchainEmbedding
 from langchain_community.embeddings import GPT4AllEmbeddings
 
@@ -45,6 +47,20 @@ logger = get_task_logger(__name__)
 current_file_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+# Local
+model_name = "all-MiniLM-L6-v2.gguf2.f16.gguf"
+gpt4all_kwargs = {"allow_download": "True"}
+embeddings = GPT4AllEmbeddings(model_name=model_name, gpt4all_kwargs=gpt4all_kwargs)
+wrapped_embeddings = LangchainEmbedding(embeddings)
+
+
+ELASTIC_HOST = os.getenv("ELASTIC_HOST", "http://localhost:9200")
+es = Elasticsearch([ELASTIC_HOST])
+
+
+
+# @celery_app.task(name="process_uploaded_file")
+from threading import Thread
 def run_async(coroutine):
     return asyncio.run(coroutine)
 
@@ -100,17 +116,6 @@ def sanitize_name(name):
 
 
 
-# Local
-model_name = "all-MiniLM-L6-v2.gguf2.f16.gguf"
-gpt4all_kwargs = {"allow_download": "True"}
-embeddings = GPT4AllEmbeddings(model_name=model_name, gpt4all_kwargs=gpt4all_kwargs)
-wrapped_embeddings = LangchainEmbedding(embeddings)
-
-
-
-
-# @celery_app.task(name="process_uploaded_file")
-from threading import Thread
 
 
 @celery_app.task(name="process_uploaded_file")
@@ -260,6 +265,9 @@ def load_with_fitz_chroma(
             logger.info(
                 f"===> Processing batch {current_batch_number} of {total_batches} for '{collection_name}', chat_id: {chat_id}"
             )
+            # logger.info(f"First doc: {documents[0]}")
+            # logger.info(f"Type of documents: {type(documents)}")
+            # logger.info(f"Type of documents[0]: {type(documents[0])}")
             if get_stop_flag(chat_id):
                 # delete_stop_flag(chat_id)
                 return []
@@ -274,30 +282,36 @@ def load_with_fitz_chroma(
                     "chat_id": chat_id,
                     "isFinished": False,
                 },
-            )
+                        )
 
             # === 🔹 Processing Documents Efficiently ===
             batch_size = 200
             document_list = []
             semaphore = asyncio.Semaphore(10)  # Limit concurrency to 10 parallel tasks
 
-            async def process_document(doc):
-                """Processes a document and returns a Document object."""
-                async with semaphore:
-                    text = doc.get("text", "").strip()
-                    if text:
-                        return Document(text=text, extra_info=doc.get("extra_info", {}))
-                    return None
+            # async def process_document(doc):
+            #     """Processes a document and returns a Document object."""
+            #     async with semaphore:
+            #         text = doc.get("text", "").strip()
 
-            # 🔹 Process documents in parallel using asyncio tasks
-            tasks = [asyncio.create_task(process_document(doc)) for doc in documents]
-            processed_documents = await asyncio.gather(*tasks)
-            document_list = list(
-                filter(None, processed_documents)
-            )  # Remove None values
+            #         if text:
+            #             return Document(text=text, extra_info=doc.get("extra_info", {}))
+            #         return None
 
+            # # 🔹 Process documents in parallel using asyncio tasks
+            # tasks = [asyncio.create_task(process_document(doc)) for doc in documents]
+            # processed_documents = await asyncio.gather(*tasks)
+            # document_list = list(
+            #     filter(None, processed_documents)
+            # )  # Remove None values
+            for i, doc in enumerate(documents):
+                # logger.info("doc  : ",str(doc))
+                embedding = embeddings.embed_documents([doc.page_content])
+                logger.info(f"Test embedding length: {len(embedding)}")
+                logger.info(f"Embedding preview: {embedding[:1]}")
+                # assert isinstance(doc, Document), f"❌ Item {i} is not a Document: {type(doc)}"
             # If no valid documents found, notify and exit
-            if not document_list:
+            if not documents:
 
                 publish_stream_event(
                     chat_id,
@@ -328,7 +342,10 @@ def load_with_fitz_chroma(
             try:
                 #  for productions Production
 
-      
+                # chroma_credentials = os.getenv("CHROMA_CLIENT_AUTH_CREDENTIALS")
+
+                # if not chroma_credentials:
+                #     raise ValueError("CHROMA_CLIENT_AUTH_CREDENTIALS is not set!")
                 chroma_host = os.getenv("CHROMA_HOST")
 
                 if not chroma_host:
@@ -342,20 +359,23 @@ def load_with_fitz_chroma(
                     #     chroma_client_auth_credentials=chroma_credentials,
                     # ),
                 )
+                from langchain_chroma import Chroma
 
-                chroma_collection = db.get_or_create_collection(collection_name)
-                vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-                storage_context = StorageContext.from_defaults(
-                    vector_store=vector_store
+                              # Insert into Chroma directly
+                chroma_vectorstore = Chroma(
+                    collection_name=collection_name,
+                    embedding_function=embeddings,
+                    client=db,
                 )
 
-                # 🏎️ **Bulk insert embeddings into Chroma**
-                VectorStoreIndex.from_documents(
-                    document_list,
-                    storage_context=storage_context,
-                    embedding=wrapped_embeddings,  # Corrected
-                    embed_model=embeddings,
-                )
+                from uuid import uuid4
+
+                uuids = [str(uuid4()) for _ in range(len(documents))]
+
+                chroma_vectorstore.add_documents(documents=documents, ids=uuids)
+                # chroma_vectorstore.add_documents(document_list)
+                # WebSocket: Notify indexing completion
+
 
                 # WebSocket: Notify indexing completion
 
@@ -442,6 +462,151 @@ def load_with_fitz_chroma(
                     },
                 )
 
+            except Exception as websocket_error:
+                logger.error(f"WebSocket send failed in fallback: {websocket_error}")
+            return False
+
+    return run_async(fallback_main())
+
+@celery_app.task(name="load_with_fitz_elastic", bind=True)
+def load_with_fitz_elastic(
+    self,
+    documents,
+    index_name,
+    chat_id,
+    current_batch_number,
+    total_batches,
+):
+    logger.info(f"{self}")
+
+    async def main(documents, index_name, chat_id, current_batch_number, total_batches):
+        try:
+            logger.info(
+                f"===> Processing batch {current_batch_number} of {total_batches} for '{index_name}', chat_id: {chat_id}"
+            )
+
+            if get_stop_flag(chat_id):
+                return []
+
+            publish_stream_event(
+                chat_id,
+                {
+                    "message": f"Processing batch {current_batch_number} of {total_batches}.",
+                    "type": "processing_start",
+                    "chat_id": chat_id,
+                    "isFinished": False,
+                },
+            )
+
+            if not documents:
+                publish_stream_event(
+                    chat_id,
+                    {
+                        "error": True,
+                        "message": "No content found; skipping indexing.",
+                        "type": "no_content",
+                        "chat_id": chat_id,
+                        "isFinished": True,
+                    },
+                )
+                logger.error("No valid content found in documents.")
+                return False
+
+            publish_stream_event(
+                chat_id,
+                {
+                    "message": f"Batch {current_batch_number}/{total_batches} document conversion complete.",
+                    "type": "conversion_done",
+                    "chat_id": chat_id,
+                    "isFinished": False,
+                },
+            )
+
+            # Prepare Elastic bulk indexing
+            actions = []
+            def sanitize_metadata(meta: dict) -> dict:
+                return {k: v for k, v in meta.items() if v is not None}
+
+            for doc in documents:
+                uid = str(uuid4())
+                metadata = sanitize_metadata(doc.metadata)
+                text = doc.page_content
+                # logger.info("doc : ",str(doc.metadata))
+                # logger.info("type : ",type(doc))
+                index_name = index_name.lower()
+
+                action = {
+                    "_index": index_name,
+                    "_id": uid,
+                    "_source": {
+                        "content": text,
+                        "metadata": metadata,
+                    },
+                }
+                # logger.info("action : ",json.dumps(action))
+                actions.append(action)
+                from elasticsearch.helpers import streaming_bulk
+
+                for ok, item in streaming_bulk(es, actions, raise_on_error=False):
+                    if not ok:
+                        print("❌ Failed to index document:", item)
+
+            # helpers.bulk(es, actions)
+
+            publish_stream_event(
+                chat_id,
+                {
+                    "message": f"Batch {current_batch_number}/{total_batches} Index Complete.",
+                    "type": "processing_done",
+                    "chat_id": chat_id,
+                    "isFinished": False,
+                },
+            )
+            logger.info("Elastic indexing complete.")
+
+            if current_batch_number == total_batches:
+                publish_stream_event(
+                    chat_id,
+                    {
+                        "message": "All tasks completed successfully.",
+                        "type": "task_complete",
+                        "chat_id": chat_id,
+                        "collections": [index_name],
+                        "isFinished": True,
+                    },
+                )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during indexing: {e}")
+            publish_stream_event(
+                chat_id,
+                {
+                    "error": True,
+                    "message": f"Indexing failed: {str(e)}",
+                    "type": "error",
+                    "chat_id": chat_id,
+                    "isFinished": current_batch_number == total_batches,
+                },
+            )
+            return False
+
+    async def fallback_main():
+        try:
+            return await main(documents, index_name, chat_id, current_batch_number, total_batches)
+        except Exception as e:
+            logger.error(f"Unhandled exception outside main(): {e}")
+            try:
+                publish_stream_event(
+                    chat_id,
+                    {
+                        "error": True,
+                        "message": f"Indexing failed: {str(e)}",
+                        "type": "error",
+                        "chat_id": chat_id,
+                        "isFinished": True,
+                    },
+                )
             except Exception as websocket_error:
                 logger.error(f"WebSocket send failed in fallback: {websocket_error}")
             return False

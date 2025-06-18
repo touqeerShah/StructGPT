@@ -86,53 +86,53 @@ async def report_generater(
 ):
     try:
         data = await request.json()
+        print(data)
+        required_fields = ["fields", "query", "chat_id",  "collection_name"]
+        field_types = {
+            "fields": str,
+            "query": str,
+            "chat_id": str,
+            "collection_name": str,
+        }
+
+        errors = validate_request(data, required_fields, field_types)
+        if errors:
+            raise HTTPException(status_code=400, detail="; ".join(errors))
+        fields = data.get("fields", "")
+        query = data.get("query", "")
+        chat_id = data.get("chat_id", "")
+        # chat_id = generate_unique_hash(chat_id + user_id):
+        collections = data.get("collection_name", "")
+
+        agent_state = AgentState(
+            fields=fields,
+            query=query,
+            struture=Struture(class_name="", class_struture=""),
+            answer=[],
+            no_iterate=0,
+            feeder="",
+            limit=10,
+            start_page=0,
+            end_page=0,
+            collection_name=collections,
+            total_pages=-1,
+            error=False,
+            error_message="",
+            chat_id=chat_id,
+        )
+        results = set_stop_flag(f"{chat_id}", False)
+        fromater = Fromater(collections, "llama-pro:8b-instruct-q5_K_M")
+        generator = fromater.generater(agent_state, chat_id)
+
+        return StreamingResponse(
+            generator,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON received.")
-    required_fields = ["keywords", "query", "chat_id", "is_memory", "collections"]
-    field_types = {
-        "keywords": str,
-        "query": list,
-        "chat_id": str,
-        "collection_name": str,
-    }
-
-    errors = validate_request(data, required_fields, field_types)
-    if errors:
-        raise HTTPException(status_code=400, detail="; ".join(errors))
-    keywords = data.get("keywords", "")
-    query = data.get("query", [])
-    chat_id = data.get("chat_id", "")
-    # chat_id = generate_unique_hash(chat_id + user_id):
-    is_memory = data.get("is_memory", False)
-    collections = data.get("collections", [])
-
-    agent_state = AgentState(
-        keywords=keywords,
-        query=query,
-        struture=Struture(class_name="", class_struture=""),
-        answer=[],
-        no_iterate=0,
-        feeder="",
-        limit=10,
-        start_page=0,
-        end_page=0,
-        collection_names=collections,
-        total_pages=-1,
-        error=False,
-        error_message="",
-        chat_id=chat_id,
-    )
-    results = set_stop_flag(f"{chat_id}", False)
-    fromater = Fromater(collections, "llama-pro:8b-instruct-q5_K_M")
-    generator = fromater.generater(agent_state, chat_id)
-
-    return StreamingResponse(
-        generator,
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
-
-
+    except Exception as e:
+        print("e : ",e)
 @llm_router.post("/kill_task")
 async def kill_celery_task(request: Request):
     errors = []

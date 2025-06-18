@@ -5,13 +5,14 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple, Awaitable
 import logging
 import asyncio
 import pymupdf
-from pymupdf import Document as FitzDocument
 from pymupdf4llm import IdentifyHeaders, to_markdown
 from app.config.celery_app import celery_app
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import os
 from concurrent.futures import ThreadPoolExecutor
-from llama_index.core.schema import Document
+
+# from llama_index.core.schema import Document
+from langchain_core.documents import Document
 
 import asyncio
 import websockets
@@ -22,7 +23,6 @@ logger = logging.getLogger("uvicorn")
 
 try:
     from llama_index.core.readers.base import BaseReader
-    from llama_index.core.schema import Document as LlamaIndexDocument
 
     # from llama_index.core.schema import Document as Document
 
@@ -50,6 +50,7 @@ class PDFMarkdownReader(BaseReader):
         self.processed_pages = 0
         self.total_pages = 0
         self.tasks = []
+
     async def load_data(
         self,
         file_path: Union[str, Path],
@@ -182,7 +183,6 @@ class PDFMarkdownReader(BaseReader):
                         )
                     return
 
-
     def _process_single_page(
         self,
         doc: pymupdf.Document,  # 👈 add this
@@ -193,7 +193,7 @@ class PDFMarkdownReader(BaseReader):
         hdr_info: IdentifyHeaders,
         message_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
-    ) -> Optional[LlamaIndexDocument]:
+    ) -> Optional[Document]:
         try:
             if get_stop_flag(chat_id):
                 return []
@@ -233,7 +233,7 @@ class PDFMarkdownReader(BaseReader):
             except Exception:
                 text = page.get_text("text") or "[Page content could not be read]"
 
-            return LlamaIndexDocument(text=text, extra_info=page_info)
+            return Document(page_content=text, metadata=page_info, id=page_number)
 
         except Exception as e:
             print(f"[Error] Failed processing page {page_number}: {e}")
@@ -250,7 +250,7 @@ class PDFMarkdownReader(BaseReader):
         total_chunks: int,
         message_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
-    ) -> Tuple[List[LlamaIndexDocument], Dict[str, Any]]:
+    ) -> Tuple[List[Document], Dict[str, Any]]:
         try:
             docs = []
             doc = pymupdf.open(file_path)  # ✅ open once
@@ -275,7 +275,7 @@ class PDFMarkdownReader(BaseReader):
                     page_result = future.result()
                     if page_result:
                         docs.append(page_result)
-            docs.sort(key=lambda d: d.extra_info["page"])
+            docs.sort(key=lambda d: d.metadata["page"])
 
             return docs, {
                 "type": "chunk",
@@ -292,27 +292,10 @@ class PDFMarkdownReader(BaseReader):
                 "message": f"Error processing chunk {chunk_index + 1}: {e}",
             }
 
-    def _process_doc_meta(
-        self,
-        doc: FitzDocument,
-        file_path: Union[Path, str],
-        page_number: int,
-        extra_info: Optional[Dict] = None,
-    ):
-        try:
-            extra_info.update(doc.metadata)
-            extra_info["page"] = page_number + 1
-            extra_info["total_pages"] = len(doc)
-            extra_info["file_path"] = str(file_path)
-            return extra_info
-        except Exception as e:
-            print(f"Error processing document metadata for page {page_number}: {e}")
-            raise
-
     # REMOVE @staticmethod
     def _send_to_celery(
         self,
-        documents: List[LlamaIndexDocument],
+        documents: List[Document],
         collection_name: str,
         chat_id: str,
         current_batch_number: int,
@@ -320,14 +303,13 @@ class PDFMarkdownReader(BaseReader):
         message_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         try:
-            serialized_docs = [
-                {"text": doc.text, "extra_info": doc.extra_info} for doc in documents
-            ]
-
+            # serialized_docs = [
+            #     {"text": doc.text, "extra_info": doc.extra_info} for doc in documents
+            # ]
             result = celery_app.send_task(
-                "load_with_fitz_chroma",
+                "load_with_fitz_elastic",
                 args=[
-                    serialized_docs,
+                    documents,
                     collection_name,
                     chat_id,
                     current_batch_number,

@@ -6,3 +6,4 @@ helm/charts/common-2.19.2.tgz
 helm/charts/redis-19.3.0.tgz
 helm/Chart.lock
 *.pyc
+celerybeat-schedule.db
