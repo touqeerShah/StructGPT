@@ -546,7 +546,7 @@ def load_with_fitz_elastic(
                 # logger.info("action : ",json.dumps(action))
                 actions.append(action)
                 from elasticsearch.helpers import streaming_bulk
-
+                print("actions : ",len(actions) )
                 for ok, item in streaming_bulk(es, actions, raise_on_error=False):
                     if not ok:
                         print("❌ Failed to index document:", item)

@@ -23,16 +23,6 @@ current_file_dir = os.path.dirname(os.path.abspath(__file__))
 # AWS
 
 
-def get_local_embedding():
-    print("Get Local Embedding")
-    model_name = "all-MiniLM-L6-v2.gguf2.f16.gguf"
-    gpt4all_kwargs = {"allow_download": False}
-    embeddings = GPT4AllEmbeddings(model_name=model_name, gpt4all_kwargs=gpt4all_kwargs)
-
-    return embeddings
-
-
-embedding = get_local_embedding()
 
 
 def get_bed_rock_object():

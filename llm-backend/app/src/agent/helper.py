@@ -16,8 +16,8 @@ class Struture(BaseModel):
 
 
 class AgentState(TypedDict):
-    struture: List[Struture]
-    fields: str
+    struture: Struture
+    fields: List[str]
     keywords: List[str]
     query: str
     answer: List[object]
@@ -31,3 +31,5 @@ class AgentState(TypedDict):
     error: bool
     error_message: str
     chat_id: str
+    next_step: str
+    split_pattern: str

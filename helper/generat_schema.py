@@ -85,6 +85,7 @@ def infer_document_structure(
     pages: List[str], model: str = "mistral", max_rounds: int = 3, schema={}
 ) -> dict:
     inferred_schema = None
+    schema = json.dumps(Struture.model_json_schema())
     prompt_prefix = f"""You are a report assistant tasked with generating a structured class definition from user context.
 
         Instructions:

@@ -87,9 +87,10 @@ async def report_generater(
     try:
         data = await request.json()
         print(data)
-        required_fields = ["fields", "query", "chat_id",  "collection_name"]
+        required_fields = ["fields", "keywords", "query", "chat_id", "collection_name"]
         field_types = {
-            "fields": str,
+            "fields": list,
+            "keywords": list,
             "query": str,
             "chat_id": str,
             "collection_name": str,
@@ -98,7 +99,9 @@ async def report_generater(
         errors = validate_request(data, required_fields, field_types)
         if errors:
             raise HTTPException(status_code=400, detail="; ".join(errors))
-        fields = data.get("fields", "")
+        fields = data.get("fields", [])
+        keywords = data.get("keywords", [])
+
         query = data.get("query", "")
         chat_id = data.get("chat_id", "")
         # chat_id = generate_unique_hash(chat_id + user_id):
@@ -106,6 +109,7 @@ async def report_generater(
 
         agent_state = AgentState(
             fields=fields,
+            keywords=keywords,
             query=query,
             struture=Struture(class_name="", class_struture=""),
             answer=[],
@@ -119,6 +123,7 @@ async def report_generater(
             error=False,
             error_message="",
             chat_id=chat_id,
+            split_pattern="",
         )
         results = set_stop_flag(f"{chat_id}", False)
         fromater = Fromater(collections, "llama-pro:8b-instruct-q5_K_M")
@@ -132,7 +137,9 @@ async def report_generater(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON received.")
     except Exception as e:
-        print("e : ",e)
+        print("e : ", e)
+
+
 @llm_router.post("/kill_task")
 async def kill_celery_task(request: Request):
     errors = []

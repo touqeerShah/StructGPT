@@ -2,6 +2,7 @@ const axios = require("axios");
 
 async function callDataGenerationAPI({
   fields,
+  keywords,
   query,
   chat_id,
   collection_name,
@@ -11,6 +12,7 @@ async function callDataGenerationAPI({
   try {
     const payload = {
       fields,
+      keywords,
       query, // should be an array of strings
       chat_id,
       is_memory,
@@ -18,7 +20,7 @@ async function callDataGenerationAPI({
     };
 
     const response = await axios.post(
-      "http://localhost:4000/llm/data_generation",
+      "http://localhost:4001/llm/data_generation",
       payload,
       {
         headers: {
@@ -48,10 +50,11 @@ async function callDataGenerationAPI({
 }
 
 callDataGenerationAPI({
-  fields: "renal drug usage",
+  fields: ["abstruct_number", "Background  ", "Method", "Results", "Funding", "Conclusions"],
+  keywords: [],
   query: "need abstruct_number start with two char then - then four more character example th-or12 or fr-1234 it have,Background  ,Method,Results,Funding, Conclusions ",
   chat_id: "demo1",
-  collection_name: "KW24Abstracts-1-20-1",
+  collection_name: "kw24abstracts-1-20-1",
   token: "TOKEN", // Your Bearer token
 });
 

@@ -1,6 +1,6 @@
 from fastapi.encoders import jsonable_encoder
 from app.src.agent.helper import AgentState
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, START, StateGraph
 from typing import AsyncIterable
 import time
 import json
@@ -12,8 +12,10 @@ import asyncio
 from app.src.agent.graph_nodes import (
     generate_struture,
     feed_data,
+    infer_document_structure,
     extract_structured_data_from_feeder,
     stream_node,
+    infer_split_regex
 )
 from app.api.utils.cache import get_stop_flag, delete_stop_flag
 
@@ -25,6 +27,8 @@ class Fromater:
 
         def iterate_continue(state):
             # print(state["no_iterate"], "__end", len(state["outline"].topic))
+            if state["error"]:
+                return "__end"
             if state["start_page"] >= state["total_pages"]:
                 # print("generate_answer")
                 return "__end"
@@ -33,30 +37,70 @@ class Fromater:
                 return "feed_data_node"
 
         # builder.add_node("check_user_abort", lambda state: None)  # No-op node
+        def is_check(state):
+            if len(state["fields"]) == 0:
+                return "infer_document_structure_node"
+            else:
+                print(" generate_struture_node ", len(state["fields"]))
+                return "generate_struture_node"
+
+        def is_error(state):
+            if state["error"]:
+                return "__end"
+            else:
+                return state["next_step"]
 
         def formate_verification_continue(state):
-            print(" = = = = > ",len(state["feeder"]))
+            print(" = = = = > ", len(state["feeder"]))
             if state["error"] or len(state["feeder"]) == 0:
                 return "__end"
             else:
                 return "extract_structured_data_from_feeder_node"
 
+        builder.add_node("infer_document_structure_node", infer_document_structure)
         builder.add_node("generate_struture_node", generate_struture)
         builder.add_node("feed_data_node", feed_data)
+        builder.add_node("infer_split_regex_node", infer_split_regex)
         builder.add_node("stream", stream_node)
         builder.add_node(
             "extract_structured_data_from_feeder_node",
             extract_structured_data_from_feeder,
         )
 
-        builder.set_entry_point("generate_struture_node")
-
-        # formate_answer → verifier → stream
-        builder.add_edge("generate_struture_node", "feed_data_node")
-        # builder.add_edge("formate_answer_verifier", "stream")
-        builder.add_edge("extract_structured_data_from_feeder_node", "stream")
-
-        # stream decides: loop or end
+        builder.add_conditional_edges(
+            START,
+            is_check,
+            {
+                "infer_document_structure_node": "infer_document_structure_node",
+                "generate_struture_node": "generate_struture_node",
+            },
+        )
+        builder.add_conditional_edges(
+            "infer_document_structure_node",
+            is_error,
+            {
+                "__end": END,
+                "infer_split_regex_node": "infer_split_regex_node",
+            },
+        )
+        builder.add_conditional_edges(
+            "generate_struture_node",
+            is_error,
+            {
+                "__end": END,
+                "infer_split_regex_node": "infer_split_regex_node",
+            },
+        )
+        builder.add_conditional_edges(
+            "infer_split_regex_node",
+            is_error,
+            {
+                "__end": END,
+                "feed_data_node": "feed_data_node",
+            },
+        )
+             
+       # stream decides: loop or end
         builder.add_conditional_edges(
             "feed_data_node",
             formate_verification_continue,
@@ -66,8 +110,15 @@ class Fromater:
             },
         )
 
-        # summary_node also goes to stream (optional if both need merging)
-        # (can skip if only verifier triggers stream)
+        builder.add_conditional_edges(
+            "extract_structured_data_from_feeder_node",
+            is_error,
+            {
+                "__end": END,
+                "stream": "stream",
+            },
+        )
+
 
         # stream decides: loop or end
         builder.add_conditional_edges(
@@ -78,8 +129,6 @@ class Fromater:
                 "__end": END,
             },
         )
-
-
 
         self.graph = builder.compile()
         self.collection_names = collection_names
@@ -146,5 +195,3 @@ class Fromater:
                 timestamp = datetime.fromtimestamp(time.time()).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
-
-               

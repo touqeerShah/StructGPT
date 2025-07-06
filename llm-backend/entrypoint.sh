@@ -10,6 +10,7 @@ apt-get UN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 pip install --no-cache-dir virtualenv
+pip install elasticsearch
 apt update && apt install -y build-essential python3-dev
 apt install -y libopenblas-dev cmake
 

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from app.api.routers.upload import collections_router
 from app.api.routers.llm import llm_router
+from app.api.routers.user import user_router
 
 
 # Load environment variables
@@ -32,6 +33,7 @@ app.add_middleware(
 # Include routers
 app.include_router(collections_router, prefix="/api")
 app.include_router(llm_router, prefix="/llm")
+app.include_router(user_router, prefix="/auth")
 
 
 # # Ensure the upload folder exists
