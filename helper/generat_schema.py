@@ -146,7 +146,7 @@ def infer_document_structure(
     return inferred_schema
 
 
-sampled = sample_pages_by_offset("kw24abstracts-1-20-1", sample_count=5)
+sampled = sample_pages_by_offset("1-20-1", sample_count=5)
 
 inferred = infer_document_structure(pages=sampled, model="mistral", schema=schema)
 print("Final structure:\n", inferred["class_struture"])

@@ -112,8 +112,8 @@ count_tokens = lambda x: len(tokenizer.encode(x))
 
 feeder = search_and_expand_with_neighbors(
     chroma_host="localhost",
-    collection_name="KW24Abstracts-1-20-1",
-    keywords=["William Beaubien-Souligny"],
+    collection_name="",
+    keywords=[""],
     token_limit=3000,
     min_tokens=1000,
     count_tokens=count_tokens

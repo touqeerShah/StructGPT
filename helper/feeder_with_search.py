@@ -185,7 +185,7 @@ tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
 count_tokens = lambda x: len(tokenizer.encode(x))
 
 state = search_and_expand_with_neighbors_elastic(
-    index_name="kw24abstracts-1-20-1",
+    index_name="1-20-1",
     # keywords=["William Beaubien-Souligny"],
     token_limit=3000,
     min_tokens=1000,
