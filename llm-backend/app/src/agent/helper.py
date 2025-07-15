@@ -22,7 +22,7 @@ class AgentState(TypedDict):
     query: str
     answer: List[object]
     feeder: List[str]
-    limit: int
+    chunk_size: int
     start_page: int
     end_page: int
     total_pages: int
@@ -33,3 +33,9 @@ class AgentState(TypedDict):
     chat_id: str
     next_step: str
     split_pattern: str
+    progress: float
+
+    start_time: float
+    process_time: float
+    memory_usage: float
+    cpu_usage: float

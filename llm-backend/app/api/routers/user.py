@@ -197,7 +197,7 @@ async def login(payload: LoginPayload, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=401, detail="Incorrect password")
 
         # Generate JWT token
-        token_data = {"sub": user.email, "email": user.email, "login_type": "user"}
+        token_data = {"sub": user.google_id, "email": user.email, "login_type": "user"}
         jwt_token, expires_at = create_access_token(token_data, timedelta(days=7))
 
         # Store token

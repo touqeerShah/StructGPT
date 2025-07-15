@@ -1,4 +1,4 @@
-from typing import List, Callable
+from typing import List, Callable,Union
 import chromadb
 from textwrap import dedent
 from pydantic import BaseModel, Field
@@ -32,30 +32,59 @@ es = Elasticsearch(
 )
 
 
-def extract_valid_json(raw_response: str) -> Optional[Dict[str, Any]]:
-    """
-    Attempts to extract and parse a valid JSON object from a raw string.
+# def extract_valid_json(raw_response: str) -> Optional[Dict[str, Any]]:
+#     """
+#     Attempts to extract and parse a valid JSON object from a raw string.
 
-    Args:
-        raw_response (str): The full response string from the model.
+#     Args:
+#         raw_response (str): The full response string from the model.
 
-    Returns:
-        Optional[Dict[str, Any]]: Parsed JSON object if successful, otherwise None.
-    """
+#     Returns:
+#         Optional[Dict[str, Any]]: Parsed JSON object if successful, otherwise None.
+#     """
+#     # Step 1: Try direct parse
+#     try:
+#         return json.loads(raw_response)
+#     except json.JSONDecodeError:
+#         pass
+
+#     # Step 2: Try to extract the first JSON object using regex
+#     json_match = re.search(r"{[\s\S]+}", raw_response)
+#     if json_match:
+#         json_string = json_match.group(0)
+#         try:
+#             return json.loads(json_string)
+#         except json.JSONDecodeError as e:
+#             print("❌ JSON decode failed after regex:", e)
+#             return None
+
+#     print("❌ No valid JSON found in response.")
+#     return None
+
+
+def extract_valid_json(raw_response: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
     # Step 1: Try direct parse
     try:
         return json.loads(raw_response)
     except json.JSONDecodeError:
         pass
 
-    # Step 2: Try to extract the first JSON object using regex
-    json_match = re.search(r"{[\s\S]+}", raw_response)
+    # Step 2: Extract JSON array or object
+    json_match = re.search(r"(\[\s*{[\s\S]+?}\s*])", raw_response)  # JSON array
+    if not json_match:
+        json_match = re.search(r"{[\s\S]+?}", raw_response)  # JSON object
+
     if json_match:
         json_string = json_match.group(0)
+
+        # Remove trailing commas (common LLM bug)
+        json_string = re.sub(r",(\s*[\]}])", r"\1", json_string)
+
         try:
             return json.loads(json_string)
         except json.JSONDecodeError as e:
-            print("❌ JSON decode failed after regex:", e)
+            print("❌ JSON decode failed after cleaning:", e)
+            print("Cleaned string:", json_string)
             return None
 
     print("❌ No valid JSON found in response.")
@@ -134,12 +163,12 @@ async def search_and_expand_with_neighbors_elastic(
                     return state
                 state["total_pages"] = total_pages
             # Build page map directly
-            limit = state.get("limit", 10)
+            chunk_size = state.get("chunk_size", 10)
             # Initialize no_iterate
             state["no_iterate"] = state.get("no_iterate", 0)
 
-            start_page = state["no_iterate"] * limit
-            end_page = min(start_page + limit, state["total_pages"])
+            start_page = state["no_iterate"] * chunk_size
+            end_page = min(start_page + chunk_size, state["total_pages"])
             state["start_page"] = start_page
             state["end_page"] = end_page
             if start_page >= state["total_pages"]:
@@ -150,7 +179,7 @@ async def search_and_expand_with_neighbors_elastic(
                 "query": {
                     "range": {"metadata.page": {"gte": start_page, "lt": end_page}}
                 },
-                "size": limit,
+                "size": chunk_size,
             }
             response = es.search(index=index_name, body=query)
             hits = response["hits"]["hits"]
@@ -183,11 +212,11 @@ async def search_and_expand_with_neighbors_elastic(
             if state["total_pages"] == -1:
                 state["total_pages"] = len(hits)
 
-            limit = state.get("limit", 10)
+            chunk_size = state.get("chunk_size", 10)
             state["no_iterate"] = state.get("no_iterate", 0)
 
-            start_page = state["no_iterate"] * limit
-            end_page = min(start_page + limit, state["total_pages"])
+            start_page = state["no_iterate"] * chunk_size
+            end_page = min(start_page + chunk_size, state["total_pages"])
             state["start_page"] = start_page
             state["end_page"] = end_page
 
@@ -213,7 +242,7 @@ async def search_and_expand_with_neighbors_elastic(
             state["matched_pages"] = sorted(matched_pages)
             print(f"📘 Pages from subset + neighbors: {sorted(matched_pages)}")
 
-            # 3. Fetch all documents from index (up to 10k limit by default)
+            # 3. Fetch all documents from index (up to 10k chunk_size by default)
             print("📥 Fetching all documents from index...")
             query = {
                 "query": {"terms": {"metadata.page": list(matched_pages)}},
@@ -312,7 +341,9 @@ def generate_feeder_from_page_range(
 
     # 2. Fetch pages in the requested range
     page_count = end_page - start_page
-    results = collection.get(include=["documents"], offset=start_page, limit=page_count)
+    results = collection.get(
+        include=["documents"], offset=start_page, chunk_size=page_count
+    )
     # print("results : ",results)
     raw_pages = results.get("documents", [])
     # print("pages : ", raw_pages)
